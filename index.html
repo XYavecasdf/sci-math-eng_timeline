@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>科技演化：全息缩放视图 [v5.0]</title>
+    <style>
+        :root {
+            --bg-color: #0b0d10;
+            --card-bg: rgba(25, 30, 35, 0.9);
+            --text-primary: #ecf0f1;
+            
+            --math-color: #00d2ff;
+            --phys-color: #ffca28;
+            --eng-color: #00e676;
+            
+            --border-color: rgba(255,255,255,0.1);
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: var(--bg-color);
+            background-image: 
+                radial-gradient(circle at 50% 50%, rgba(20, 30, 40, 1) 0%, rgba(11, 13, 16, 1) 100%);
+            color: var(--text-primary);
+            font-family: 'Segoe UI', Roboto, sans-serif;
+            overflow: hidden;
+            user-select: none;
+        }
+
+        /* --- 1. HUD 面板 (回归且增强) --- */
+        #hud-panel {
+            position: fixed;
+            bottom: 30px;
+            right: 30px;
+            width: 300px;
+            background: rgba(15, 18, 22, 0.95);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            border-left: 4px solid #fff;
+            padding: 20px;
+            border-radius: 4px;
+            box-shadow: 0 0 40px rgba(0,0,0,0.8);
+            backdrop-filter: blur(10px);
+            z-index: 3000; /* 确保在最上层 */
+            
+            /* 动画效果 */
+            opacity: 0;
+            transform: translateY(20px);
+            transition: all 0.2s cubic-bezier(0.19, 1, 0.22, 1);
+            pointer-events: none;
+        }
+
+        #hud-panel.active {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .hud-title { font-size: 1.1rem; font-weight: bold; margin-bottom: 8px; color: #fff; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 8px;}
+        .hud-desc { font-size: 0.8rem; color: #aaa; margin-bottom: 15px; line-height: 1.4; }
+        
+        .hud-section-title { font-size: 0.7rem; color: #607d8b; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; display: block;}
+        .hud-item { display: flex; align-items: center; margin-bottom: 5px; font-size: 0.8rem; }
+        .hud-dot { width: 6px; height: 6px; border-radius: 50%; margin-right: 8px; }
+        .hud-rel-type { margin-left: auto; font-size: 0.7rem; opacity: 0.5; font-style: italic; }
+
+        /* --- 2. 控制按钮 --- */
+        #ui-controls {
+            position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%);
+            display: flex; gap: 10px; z-index: 2000;
+            background: rgba(0,0,0,0.6); padding: 8px 15px; border-radius: 30px;
+            backdrop-filter: blur(5px); border: 1px solid rgba(255,255,255,0.1);
+        }
+        .btn {
+            background: #333; color: #fff; width: 36px; height: 36px;
+            border-radius: 50%; cursor: pointer; border: 1px solid #555;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 1.2rem; transition: 0.2s;
+        }
+        .btn:hover { background: #555; transform: scale(1.1); }
+        .btn-text { width: auto; padding: 0 15px; font-size: 0.9rem; border-radius: 18px; }
+
+        /* --- 3. 主视图 --- */
+        #viewport {
+            width: 100vw; height: 100vh; overflow: hidden; cursor: grab; position: relative;
+        }
+        #viewport:active { cursor: grabbing; }
+
+        #timeline-container {
+            position: absolute; top: 0; left: 0;
+            transform-origin: 0 0; 
+        }
+
+        .row-label {
+            position: absolute; left: -100px; 
+            font-size: 1.2rem; font-weight: 900; opacity: 0.3;
+            text-align: right; width: 80px; letter-spacing: 2px;
+        }
+
+        /* 卡片样式 */
+        .card {
+            position: absolute;
+            width: 150px;
+            padding: 10px;
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-left-width: 3px;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            z-index: 10;
+            transition: transform 0.2s, opacity 0.2s, background 0.2s;
+        }
+
+        .card.type-math { border-left-color: var(--math-color); }
+        .card.type-physics { border-left-color: var(--phys-color); }
+        .card.type-eng { border-left-color: var(--eng-color); }
+
+        .card:hover {
+            transform: scale(1.15); z-index: 100;
+            background: #2d343c; border-color: #fff;
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+        }
+        
+        .card-year { font-family: monospace; opacity: 0.7; font-size: 0.7rem; color: #888; margin-bottom: 2px; }
+        .card-title { font-weight: bold; font-size: 0.9rem; color: #fff; }
+
+        /* 连线 */
+        svg { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1; }
+        path { fill: none; stroke: #444; stroke-width: 1.5; opacity: 0.2; transition: all 0.2s; }
+        path.active { opacity: 0.8; stroke-width: 2.5; }
+
+        /* 聚焦状态 */
+        .dimmed { opacity: 0.15; filter: grayscale(0.8); }
+        .highlighted { opacity: 1; filter: grayscale(0); }
+
+    </style>
+</head>
+<body>
+
+<header style="position:fixed; top:20px; left:20px; z-index:1000; pointer-events:none;">
+    <h1 style="margin:0; font-size:1.2rem; text-shadow:0 2px 4px #000;">SCITECH EVOLUTION v5</h1>
+    <div style="font-size:0.7rem; opacity:0.6;">全息交互版 | 滚轮缩放 | 拖拽平移</div>
+</header>
+
+<div id="hud-panel">
+    <div class="hud-title" id="hud-title">Title</div>
+    <div class="hud-desc" id="hud-desc">Description goes here...</div>
+    <div id="hud-links"></div>
+</div>
+
+<div id="ui-controls">
+    <div class="btn" onclick="zoomOut()">-</div>
+    <div class="btn btn-text" onclick="resetView()">复位视图</div>
+    <div class="btn" onclick="zoomIn()">+</div>
+</div>
+
+<div id="viewport">
+    <div id="timeline-container">
+        <svg id="connections"></svg>
+        <div id="nodes-area"></div>
+    </div>
+</div>
+
+<script>
+    // --- 1. 数据集 ---
+    const events = [
+        // 1600s
+        { id: 'm1', type: 'math', year: 1637, title: '解析几何', desc: '笛卡尔。用代数方程描述几何，坐标系是现代科学的“地图”。' },
+        { id: 'm2', type: 'math', year: 1665, title: '微积分', desc: '牛顿/莱布尼茨。处理变化率的数学工具。' },
+        { id: 'p1', type: 'physics', year: 1687, title: '经典力学', desc: '《原理》。F=ma，万有引力，决定论宇宙观。' },
+        { id: 'e1', type: 'eng', year: 1712, title: '蒸汽机', desc: '工业革命的动力心脏，热能转机械能。' },
+        
+        // 1800s
+        { id: 'm_var', type: 'math', year: 1788, title: '变分法', desc: '拉格朗日力学基础，寻找自然界的极值。' },
+        { id: 'm3', type: 'math', year: 1822, title: '傅里叶分析', desc: '将复杂信号分解为正弦波，通信与量子的基石。' },
+        { id: 'p2', type: 'physics', year: 1831, title: '电磁感应', desc: '法拉第。磁生电，电生磁。' },
+        { id: 'p3', type: 'physics', year: 1850, title: '热力学', desc: '熵增原理，能量守恒。' },
+        { id: 'm_geo', type: 'math', year: 1854, title: '黎曼几何', desc: '弯曲空间的数学，为广义相对论铺路。' },
+        { id: 'm_bool', type: 'math', year: 1854, title: '布尔代数', desc: '逻辑的数学化(0/1)，计算机的底层语言。' },
+        { id: 'p4', type: 'physics', year: 1865, title: '麦克斯韦方程', desc: '电磁大统一，预言电磁波(光)的存在。' },
+        { id: 'e3', type: 'eng', year: 1876, title: '内燃机', desc: '奥托循环，现代交通基础。' },
+        { id: 'e4', type: 'eng', year: 1895, title: '无线电', desc: '马可尼。验证麦克斯韦预言，开启通信时代。' },
+
+        // 1900s Early
+        { id: 'p5', type: 'physics', year: 1905, title: '狭义相对论', desc: '时空统一，E=mc²。' },
+        { id: 'p6', type: 'physics', year: 1915, title: '广义相对论', desc: '引力即时空弯曲，依赖黎曼几何。' },
+        { id: 'p7', type: 'physics', year: 1925, title: '量子力学', desc: '不确定性原理，波函数，微观世界的概率性。' },
+        { id: 'm_turing', type: 'math', year: 1936, title: '图灵机', desc: '定义了什么是“可计算”，计算机科学起源。' },
+        { id: 'm_info', type: 'math', year: 1948, title: '信息论', desc: '香农。比特(bit)诞生，通信的数学极限。' },
+
+        // 1900s Mid
+        { id: 'e_nuke', type: 'eng', year: 1945, title: '原子弹', desc: '质能方程的终极暴力应用。' },
+        { id: 'e_trans', type: 'eng', year: 1947, title: '晶体管', desc: '基于半导体量子效应，取代真空管。' },
+        { id: 'e_laser', type: 'eng', year: 1960, title: '激光', desc: '受激辐射。量子力学的直接应用。' },
+        { id: 'e_net', type: 'eng', year: 1969, title: '互联网', desc: 'TCP/IP，全球信息互联。' },
+        { id: 'e_gps', type: 'eng', year: 1978, title: 'GPS', desc: '必须修正相对论效应才能导航的工程奇迹。' },
+
+        // Modern
+        { id: 'm_back', type: 'math', year: 1986, title: '反向传播', desc: '神经网络训练的核心算法。' },
+        { id: 'e_ai', type: 'eng', year: 2012, title: '深度学习', desc: '算力+算法+大数据，AI爆发。' },
+        { id: 'e_ligo', type: 'eng', year: 2015, title: 'LIGO', desc: '引力波探测，聆听时空的涟漪。' }
+    ];
+
+    const links = [
+        { s:'m1', t:'p1' }, { s:'m2', t:'p1' }, { s:'m2', t:'m_var' }, { s:'m2', t:'m_back' },
+        { s:'p1', t:'e1' }, { s:'p3', t:'e1' }, { s:'p3', t:'e3' },
+        { s:'m3', t:'p7' }, { s:'m3', t:'e4' }, { s:'m3', t:'m_info' },
+        { s:'p2', t:'p4' }, { s:'p4', t:'e4' }, { s:'p4', t:'p5' },
+        { s:'m_bool', t:'m_turing' }, { s:'m_bool', t:'e_trans' },
+        { s:'m_geo', t:'p6' }, { s:'p5', t:'e_nuke' }, { s:'p6', t:'e_gps' }, { s:'p6', t:'e_ligo' },
+        { s:'p7', t:'e_trans' }, { s:'p7', t:'e_laser' }, { s:'p7', t:'e_nuke' },
+        { s:'m_turing', t:'m_info' }, { s:'m_turing', t:'e_net' }, { s:'m_turing', t:'e_ai' },
+        { s:'m_info', t:'e_net' }, { s:'e_trans', t:'e_net' }, { s:'e_trans', t:'e_ai' }, { s:'e_trans', t:'e_gps' },
+        { s:'m_back', t:'e_ai' }, { s:'e_laser', t:'e_ligo' }
+    ];
+
+    // --- 2. 配置 ---
+    const ROW_Y = { 'math': 150, 'physics': 350, 'eng': 550 };
+    const SPACING = 170;
+    const LEFT_PAD = 100;
+
+    const container = document.getElementById('timeline-container');
+    const nodesArea = document.getElementById('nodes-area');
+    const svg = document.getElementById('connections');
+    const hud = document.getElementById('hud-panel');
+    const hudTitle = document.getElementById('hud-title');
+    const hudDesc = document.getElementById('hud-desc');
+    const hudLinks = document.getElementById('hud-links');
+
+    const nodeElements = {};
+    const lines = [];
+
+    // --- 3. 渲染 ---
+    function init() {
+        // 绘制行标签
+        Object.keys(ROW_Y).forEach(type => {
+            const label = document.createElement('div');
+            label.className = 'row-label';
+            label.innerText = type.toUpperCase();
+            label.style.top = (ROW_Y[type] + 20) + 'px';
+            container.appendChild(label);
+        });
+
+        // 绘制卡片
+        events.forEach((evt, i) => {
+            const el = document.createElement('div');
+            el.className = `card type-${evt.type}`;
+            el.id = evt.id;
+            el.style.left = (LEFT_PAD + i * SPACING) + 'px';
+            el.style.top = ROW_Y[evt.type] + 'px';
+            el.innerHTML = `<div class="card-year">${evt.year}</div><div class="card-title">${evt.title}</div>`;
+            
+            nodesArea.appendChild(el);
+            nodeElements[evt.id] = el;
+
+            el.addEventListener('mouseenter', () => highlight(evt));
+            el.addEventListener('mouseleave', clearHighlight);
+        });
+
+        // 设定容器大小
+        container.style.width = (LEFT_PAD + events.length * SPACING + 300) + 'px';
+        container.style.height = '800px';
+
+        drawLines();
+        resetView();
+    }
+
+    function drawLines() {
+        svg.innerHTML = '';
+        lines.length = 0;
+        
+        links.forEach(l => {
+            const sNode = nodeElements[l.s];
+            const tNode = nodeElements[l.t];
+            if(!sNode || !tNode) return;
+
+            const sx = parseFloat(sNode.style.left) + 75; // 75 = width/2
+            const sy = parseFloat(sNode.style.top) + 30; // 30 = height/2 approx
+            const tx = parseFloat(tNode.style.left) + 75;
+            const ty = parseFloat(tNode.style.top) + 30;
+
+            const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+            // S型曲线
+            const d = `M ${sx} ${sy} C ${sx} ${sy+60}, ${tx} ${ty-60}, ${tx} ${ty}`;
+            path.setAttribute("d", d);
+            
+            svg.appendChild(path);
+            lines.push({ el: path, s: l.s, t: l.t });
+        });
+    }
+
+    // --- 4. 视图控制 (缩放/平移) ---
+    let state = { scale: 0.9, x: 50, y: 50, panning: false, startX:0, startY:0 };
+    
+    function updateTransform() {
+        container.style.transform = `translate(${state.x}px, ${state.y}px) scale(${state.scale})`;
+    }
+
+    const viewport = document.getElementById('viewport');
+    
+    // 滚轮缩放
+    viewport.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        const factor = e.ctrlKey ? 0.05 : 0.02; // Ctrl更灵敏
+        if(e.ctrlKey || Math.abs(e.deltaY) < 50) { // 判定为缩放意图
+            const delta = -Math.sign(e.deltaY) * 0.1;
+            const newScale = Math.min(Math.max(state.scale + delta, 0.3), 3);
+            state.scale = newScale;
+        } else {
+            // 普通滚动转换为水平平移
+            state.x -= e.deltaY;
+        }
+        updateTransform();
+    }, { passive: false });
+
+    // 拖拽
+    viewport.addEventListener('mousedown', e => {
+        state.panning = true;
+        state.startX = e.clientX - state.x;
+        state.startY = e.clientY - state.y;
+        viewport.style.cursor = 'grabbing';
+    });
+    window.addEventListener('mousemove', e => {
+        if(!state.panning) return;
+        state.x = e.clientX - state.startX;
+        state.y = e.clientY - state.startY;
+        updateTransform();
+    });
+    window.addEventListener('mouseup', () => {
+        state.panning = false;
+        viewport.style.cursor = 'grab';
+    });
+
+    window.zoomIn = () => { state.scale += 0.2; updateTransform(); }
+    window.zoomOut = () => { state.scale -= 0.2; updateTransform(); }
+    window.resetView = () => {
+        state.scale = 0.9;
+        state.x = 50;
+        state.y = 50;
+        updateTransform();
+    }
+
+    // --- 5. 交互与HUD逻辑 ---
+    
+    function getRelType(sId, tId) {
+        const s = events.find(e=>e.id===sId);
+        const t = events.find(e=>e.id===tId);
+        if(s.type === 'math') return '提供理论工具';
+        if(s.type === 'physics' && t.type === 'eng') return '奠定物理基础';
+        if(s.type === 'eng' && t.type === 'eng') return '技术迭代';
+        return '关联影响';
+    }
+
+    function highlight(evt) {
+        const related = new Set([evt.id]);
+        const incoming = [];
+        const outgoing = [];
+        const activeLines = [];
+
+        // 查找关系
+        links.forEach((l, i) => {
+            if (l.s === evt.id) {
+                related.add(l.t);
+                activeLines.push(lines[i]);
+                const tNode = events.find(e=>e.id === l.t);
+                outgoing.push({ node: tNode, rel: getRelType(l.s, l.t) });
+            }
+            if (l.t === evt.id) {
+                related.add(l.s);
+                activeLines.push(lines[i]);
+                const sNode = events.find(e=>e.id === l.s);
+                incoming.push({ node: sNode, rel: getRelType(l.s, l.t) });
+            }
+        });
+
+        // 视觉高亮
+        Object.values(nodeElements).forEach(el => {
+            if(related.has(el.id)) {
+                el.classList.add('highlighted');
+                el.classList.remove('dimmed');
+            } else {
+                el.classList.add('dimmed');
+                el.classList.remove('highlighted');
+            }
+        });
+
+        lines.forEach(l => {
+            if(activeLines.includes(l)) {
+                l.el.classList.add('active');
+                const color = events.find(e=>e.id===l.s).type === 'math' ? 'var(--math-color)' : 
+                              events.find(e=>e.id===l.s).type === 'physics' ? 'var(--phys-color)' : 'var(--eng-color)';
+                l.el.style.stroke = color;
+            } else {
+                l.el.classList.remove('active');
+                l.el.style.stroke = '';
+            }
+        });
+
+        // 更新 HUD
+        hudTitle.innerText = evt.title;
+        hudTitle.style.borderLeft = `4px solid var(--${evt.type}-color)`;
+        hudTitle.style.paddingLeft = '10px';
+        hudDesc.innerText = evt.desc;
+        
+        let html = '';
+        if(incoming.length) {
+            html += `<span class="hud-section-title">基于 / Sources</span>`;
+            incoming.forEach(item => {
+                html += `
+                <div class="hud-item">
+                    <div class="hud-dot" style="background:var(--${item.node.type}-color)"></div>
+                    <span>${item.node.title}</span>
+                    <span class="hud-rel-type">${item.rel}</span>
+                </div>`;
+            });
+        }
+        if(outgoing.length) {
+            html += `<span class="hud-section-title" style="margin-top:10px">衍生 / Targets</span>`;
+            outgoing.forEach(item => {
+                html += `
+                <div class="hud-item">
+                    <div class="hud-dot" style="background:var(--${item.node.type}-color)"></div>
+                    <span>${item.node.title}</span>
+                    <span class="hud-rel-type">${item.rel}</span>
+                </div>`;
+            });
+        }
+        hudLinks.innerHTML = html;
+        hud.classList.add('active');
+    }
+
+    function clearHighlight() {
+        Object.values(nodeElements).forEach(el => el.classList.remove('dimmed', 'highlighted'));
+        lines.forEach(l => { l.el.classList.remove('active'); l.el.style.stroke = ''; });
+        hud.classList.remove('active');
+    }
+
+    init();
+
+</script>
+</body>
+</html>
